@@ -24,6 +24,48 @@ export default function ResultTable({
 }) {
   const [tab, setTab] = useState<"imported" | "skipped">("imported");
 
+  const exportRows = tab === "imported" ? result.records : result.skipped_records;
+
+  function downloadFile(filename: string, content: string, mimeType: string) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExport(format: "csv" | "json") {
+    if (exportRows.length === 0) return;
+
+    if (format === "json") {
+      downloadFile(
+        `${tab === "imported" ? "imported-records" : "skipped-records"}.json`,
+        JSON.stringify(exportRows, null, 2),
+        "application/json;charset=utf-8;"
+      );
+      return;
+    }
+
+    const headers = Object.keys(exportRows[0] as Record<string, unknown>);
+    const csvRows = exportRows.map((row) => {
+      const values = headers.map((header) => {
+        const value = (row as Record<string, unknown>)[header];
+        const normalized = value == null ? "" : String(value);
+        return normalized.replace(/"/g, '""');
+      });
+      return values.map((value) => `"${value}"`).join(",");
+    });
+
+    const csvContent = [headers.join(","), ...csvRows].join("\n");
+    downloadFile(
+      `${tab === "imported" ? "imported-records" : "skipped-records"}.csv`,
+      csvContent,
+      "text/csv;charset=utf-8;"
+    );
+  }
+
   return (
     <div>
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -57,12 +99,26 @@ export default function ResultTable({
             Skipped ({result.total_skipped})
           </TabButton>
         </div>
-        <button
-          onClick={onStartOver}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          Import another file
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleExport("csv")}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Export CSV
+          </button>
+          <button
+            onClick={() => handleExport("json")}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Export JSON
+          </button>
+          <button
+            onClick={onStartOver}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Import another file
+          </button>
+        </div>
       </div>
 
       {tab === "imported" ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Papa from "papaparse";
 import UploadStep from "@/components/UploadStep";
 import PreviewTable from "@/components/PreviewTable";
@@ -9,6 +9,7 @@ import { importCsv } from "@/lib/api";
 import type { ImportResponse, Step } from "@/lib/types";
 
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
+const BATCH_SIZE = 25;
 
 export default function Home() {
   const [step, setStep] = useState<Step>("upload");
@@ -18,6 +19,8 @@ export default function Home() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResponse | null>(null);
+  const [processingStage, setProcessingStage] = useState("Preparing your file...");
+  const [processingProgress, setProcessingProgress] = useState(0);
   const [darkMode, setDarkMode] = useState(false);
 
   function handleFileSelected(selected: File) {
@@ -54,14 +57,22 @@ export default function Home() {
 
   async function handleConfirm() {
     if (!file) return;
+    const estimatedBatches = Math.max(1, Math.ceil(rows.length / BATCH_SIZE));
     setStep("processing");
     setProcessingError(null);
+    setProcessingStage("Preparing your file...");
+    setProcessingProgress(10);
+
     try {
       const res = await importCsv(file);
+      setProcessingStage(`Completed ${estimatedBatches} batch${estimatedBatches === 1 ? "" : "es"} successfully.`);
+      setProcessingProgress(100);
       setResult(res);
-      setStep("result");
+      setTimeout(() => setStep("result"), 250);
     } catch (err: any) {
       setProcessingError(err.message || "Something went wrong while importing.");
+      setProcessingStage("Import failed.");
+      setProcessingProgress(0);
       setStep("preview");
     }
   }
@@ -73,8 +84,37 @@ export default function Home() {
     setResult(null);
     setUploadError(null);
     setProcessingError(null);
+    setProcessingStage("Preparing your file...");
+    setProcessingProgress(0);
     setStep("upload");
   }
+
+  useEffect(() => {
+    if (step !== "processing") return;
+
+    const estimatedBatches = Math.max(1, Math.ceil(rows.length / BATCH_SIZE));
+    const stages = [
+      { label: "Preparing your file and validating upload...", progress: 20 },
+      { label: `Parsing ${rows.length} rows for AI mapping...`, progress: 45 },
+      { label: `Sending ${estimatedBatches} batch${estimatedBatches === 1 ? "" : "es"} to the AI model...`, progress: 75 },
+      { label: "Waiting for the model to finish mapping your records...", progress: 90 },
+    ];
+
+    let index = 0;
+    const interval = window.setInterval(() => {
+      const current = stages[index];
+      if (!current) {
+        setProcessingStage("Finishing import...");
+        setProcessingProgress(95);
+        return;
+      }
+      setProcessingStage(current.label);
+      setProcessingProgress(current.progress);
+      index += 1;
+    }, 1600);
+
+    return () => window.clearInterval(interval);
+  }, [step, rows.length]);
 
   return (
     <div className={darkMode ? "dark" : ""}>
@@ -123,7 +163,13 @@ export default function Home() {
               </>
             )}
 
-            {step === "processing" && <ProcessingState />}
+            {step === "processing" && (
+              <ProcessingState
+                stage={processingStage}
+                progress={processingProgress}
+                estimatedBatches={Math.max(1, Math.ceil(rows.length / BATCH_SIZE))}
+              />
+            )}
 
             {step === "result" && result && (
               <ResultTable result={result} onStartOver={handleStartOver} />
@@ -176,16 +222,36 @@ function Stepper({ current }: { current: Step }) {
   );
 }
 
-function ProcessingState() {
+function ProcessingState({
+  stage,
+  progress,
+  estimatedBatches,
+}: {
+  stage: string;
+  progress: number;
+  estimatedBatches: number;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-20 dark:border-slate-800 dark:bg-slate-900">
-      <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-500" />
-      <p className="mt-4 text-sm font-medium text-slate-700 dark:text-slate-300">
-        AI is mapping your CSV to CRM fields…
-      </p>
-      <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-        Larger files are processed in batches, this can take a moment.
-      </p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-8 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex flex-col items-center justify-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-500" />
+        <p className="mt-4 text-sm font-medium text-slate-700 dark:text-slate-300">
+          AI is mapping your CSV to CRM fields…
+        </p>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{stage}</p>
+        <div className="mt-4 flex w-full max-w-md items-center gap-3">
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+            <div
+              className="h-full rounded-full bg-brand-500 transition-all duration-500"
+              style={{ width: `${Math.max(progress, 8)}%` }}
+            />
+          </div>
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progress}%</span>
+        </div>
+        <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+          Estimated {estimatedBatches} batch{estimatedBatches === 1 ? "" : "es"} for this file.
+        </p>
+      </div>
     </div>
   );
 }
