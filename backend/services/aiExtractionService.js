@@ -79,15 +79,17 @@ export function splitIntoBatches(records, batchSize) {
 // --------------------------- Single batch call with retry -----------------------------------------
 
 async function callModelOnce(rows) {
-  const response = await anthropic.messages.create({
+  const response = await ai.models.generateContent({
     model: MODEL,
-    max_tokens: 4096,
-    system: buildSystemPrompt(),
-    messages: [{ role: "user", content: buildUserPrompt(rows) }],
+    contents: buildUserPrompt(rows),
+    config: {
+      systemInstruction: buildSystemPrompt(),
+      responseMimeType: "application/json",
+    },
   });
 
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock) throw new Error("Model returned no text content.");
+  const text = response.text;
+  if (!text) throw new Error("Model returned no text content.");
 
   const cleaned = textBlock.text
     .trim()
